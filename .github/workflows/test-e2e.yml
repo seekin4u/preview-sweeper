@@ -25,6 +25,12 @@ jobs:
 
       - name: Verify kind installation
         run: kind version
+      
+      - name: Debug kubectl context
+        run: |
+          kubectl config get-contexts
+          kubectl config current-context
+          kubectl cluster-info
 
       - name: Running Test e2e
         run: |
