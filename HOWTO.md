@@ -14,3 +14,13 @@ ghcr-login (alias ghcr-login='security find-internet-password -s ghcr.io -w | do
 export IMG=ghcr.io/seekin4u/preview-sweeper:v0.0.1
 docker build -t $IMG -f Dockerfile .
 docker push $IMG
+
+//for arm64 arch
+docker buildx create --use
+
+docker buildx build --platform linux/arm64 -t $IMG -f Dockerfile . 
+docker buildx build \
+  --platform linux/arm64 \
+  -t <REGISTRY>/<REPO>:arm64 \
+  --push .
+  

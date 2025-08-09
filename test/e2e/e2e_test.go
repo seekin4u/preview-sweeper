@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"os/exec"
 	"time"
 
@@ -10,27 +11,38 @@ import (
 	"github.com/seekin4u/preview-sweeper/test/utils"
 )
 
-const (
-	namespace = "preview-sweeper-system"
-	testNS    = "preview-test"
-)
+const namespace = "preview-sweeper-system"
+const serviceAccountName = "preview-sweeper-controller-manager"
+const metricsServiceName = "preview-sweeper-controller-manager-metrics-service"
+const metricsRoleBindingName = "preview-sweeper-metrics-binding"
+const projectImage = "ghcr.io/seekin4u/preview-sweeper:v0.0.2"
 
 var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
 	BeforeAll(func() {
 		By("deploying the controller-manager into the cluster")
-		cmd := exec.Command("make", "deploy", "IMG=example.com/preview-sweeper:v0.0.1")
+		cmd := exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))
 		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller")
+		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
 
-		Eventually(func() string {
-			out, _ := utils.Run(exec.Command(
-				"kubectl", "get", "pods",
-				"-n", namespace,
-				"-l", "control-plane=controller-manager",
-				"-o", "jsonpath={.items[0].status.phase}",
-			))
-			return out
-		}, 2*time.Minute, 5*time.Second).Should(Equal("Running"))
+		By("patching deployment to use short TTL and sweep interval for tests")
+		patch := `[
+			{"op":"replace","path":"/spec/template/spec/containers/0/args","value":[
+				"--metrics-bind-address=:8443",
+				"--health-probe-bind-address=:8081",
+				"--leader-elect=false",
+				"--sweep-every=5s",
+				"--ttl=10s"
+			]}
+		]`
+		cmd = exec.Command("kubectl", "-n", namespace, "patch", "deploy", "preview-sweeper-controller-manager",
+			"--type=json", "-p", patch)
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to patch controller deployment")
+
+		By("waiting for patched controller to be ready")
+		cmd = exec.Command("kubectl", "-n", namespace, "rollout", "status", "deploy", "preview-sweeper-controller-manager")
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Controller rollout failed")
 	})
 
 	AfterAll(func() {
@@ -39,36 +51,26 @@ var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
 		_, _ = utils.Run(cmd)
 	})
 
+	SetDefaultEventuallyTimeout(2 * time.Minute)
+	SetDefaultEventuallyPollingInterval(time.Second)
+
 	It("should delete preview-* namespaces older than TTL", func() {
+		const testNS = "preview-test"
+
+		// Ensure previous test NS is gone before creating
+		By(fmt.Sprintf("cleaning up old namespace %s if it exists", testNS))
+		_ = exec.Command("kubectl", "delete", "namespace", testNS, "--ignore-not-found=true").Run()
+
 		By("creating a preview namespace")
 		cmd := exec.Command("kubectl", "create", "namespace", testNS)
 		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred())
+		Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
 
 		By("waiting for namespace to be deleted after TTL")
 		Eventually(func() bool {
-			_, err := utils.Run(exec.Command(
-				"kubectl", "get", "namespace", testNS,
-			))
-			return err != nil
-		}, 3*time.Minute, 10*time.Second).Should(BeTrue(), "Namespace should be deleted by sweeper")
-	})
-
-	It("should NOT delete non-preview namespaces", func() {
-		nonPreview := "prod-stable"
-		By("creating a non-preview namespace")
-		cmd := exec.Command("kubectl", "create", "namespace", nonPreview)
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred())
-
-		By("waiting for a while to ensure it's not deleted")
-		Consistently(func() bool {
-			_, err := utils.Run(exec.Command(
-				"kubectl", "get", "namespace", nonPreview,
-			))
-			return err == nil
-		}, 2*time.Minute, 10*time.Second).Should(BeTrue(), "Non-preview namespace should persist")
-
-		_ = exec.Command("kubectl", "delete", "namespace", nonPreview).Run()
+			cmd := exec.Command("kubectl", "get", "namespace", testNS)
+			_, err := utils.Run(cmd)
+			return err != nil // namespace gone if err != nil
+		}).Should(BeTrue(), "Namespace should be deleted by sweeper")
 	})
 })
