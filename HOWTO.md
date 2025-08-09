@@ -5,4 +5,12 @@ go: sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20250731065915-e8c
 maxsauce@192 ~/Desktop/preview-sweeper$ echo 'export PATH="$(go env GOPATH)/bin:$PATH"' >> ~/.zshrc                                                                                   ✖ ✹main 
 maxsauce@192 ~/Desktop/preview-sweeper$ source ~/.zshrc                                                                                                                               ✖ ✹main 
 maxsauce@192 ~/Desktop/preview-sweeper$ eval "$(setup-envtest use -p env 1.30.x)"                                                                                                     ✖ ✹main 
-maxsauce@192 ~/Desktop/preview-sweeper$ go test ./internal/... -count=1    
+maxsauce@192 ~/Desktop/preview-sweeper$ go test ./internal/... -count=1    //integrated unit tests
+maxsauce@192 ~/Desktop/preview-sweeper$ go test ./test/... -v              //tests on real cluster using my kubeconfig
+
+-----------------------------------------
+Build:
+ghcr-login (alias ghcr-login='security find-internet-password -s ghcr.io -w | docker login ghcr.io -u seekin4u --password-stdin')
+export IMG=ghcr.io/seekin4u/preview-sweeper:v0.0.1
+docker build -t $IMG -f Dockerfile .
+docker push $IMG
