@@ -35,15 +35,14 @@ var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
 	)
 
 	BeforeAll(func() {
-		// Allow overriding image via env (e.g., E2E_IMG=ghcr.io/user/preview-sweeper:tag)
 		img = os.Getenv("E2E_IMG")
 		if img == "" {
 			img = "ghcr.io/seekin4u/preview-sweeper:v0.0.3"
 		}
 
 		suffix := time.Now().Unix()
-		ctrlNS = fmt.Sprintf("preview-sweeper-e2e-%d", suffix)
-		testNS = fmt.Sprintf("preview-sweeper-test-%d", suffix)
+		ctrlNS = fmt.Sprintf("sweeper-e2e-%d", suffix)
+		testNS = fmt.Sprintf("preview-test-%d", suffix)
 		crName = fmt.Sprintf("preview-sweeper-e2e-%d", suffix)
 		crbName = fmt.Sprintf("preview-sweeper-e2e-%d", suffix)
 

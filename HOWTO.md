@@ -6,7 +6,7 @@ maxsauce@192 ~/Desktop/preview-sweeper$ echo 'export PATH="$(go env GOPATH)/bin:
 maxsauce@192 ~/Desktop/preview-sweeper$ source ~/.zshrc                                                                                                                               ✖ ✹main 
 maxsauce@192 ~/Desktop/preview-sweeper$ eval "$(setup-envtest use -p env 1.30.x)"                                                                                                     ✖ ✹main 
 maxsauce@192 ~/Desktop/preview-sweeper$ go test ./internal/... -count=1    //integrated unit tests
-maxsauce@192 ~/Desktop/preview-sweeper$ go test ./test/... -v              //tests on real cluster using my kubeconfig
+maxsauce@192 ~/Desktop/preview-sweeper$ go test ./... -v                   //tests on real cluster using my kubeconfig
 
 -----------------------------------------
 Build:
