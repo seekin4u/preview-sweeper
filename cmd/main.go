@@ -139,9 +139,11 @@ func main() {
 
 	ctx := ctrl.SetupSignalHandler()
 
+	rec := mgr.GetEventRecorderFor("preview-sweeper")
 	sweeper := &controller.NamespaceSweeper{
-		Client: mgr.GetClient(),
-		TTL:    ttl,
+		Client:   mgr.GetClient(),
+		TTL:      ttl,
+		Recorder: rec,
 	}
 	sweeper.Start(ctx, sweepEvery)
 

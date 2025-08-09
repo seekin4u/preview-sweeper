@@ -22,13 +22,15 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type NamespaceSweeper struct {
-	Client client.Client
-	TTL    time.Duration
+	Client   client.Client
+	TTL      time.Duration
+	Recorder record.EventRecorder
 }
 
 func (s *NamespaceSweeper) Start(ctx context.Context, interval time.Duration) {
@@ -61,6 +63,9 @@ func (s *NamespaceSweeper) Start(ctx context.Context, interval time.Duration) {
 							logger.Info("Deleting expired namespace", "name", ns.Name, "age", age)
 							if err := s.Client.Delete(ctx, &ns); err != nil {
 								logger.Error(err, "Failed to delete namespace", "name", ns.Name)
+							} else if s.Recorder != nil {
+								s.Recorder.Eventf(&ns, corev1.EventTypeNormal, "NamespaceCleanup",
+									"Deleted namespace %q, older than %s", ns.Name, s.TTL)
 							}
 						}
 					}
