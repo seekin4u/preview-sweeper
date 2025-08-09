@@ -21,10 +21,13 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+
+	"github.com/seekin4u/preview-sweeper/controllers"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -198,6 +201,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	sweeper := &controllers.NamespaceSweeper{
+		Client: mgr.GetClient(),
+	}
+	sweeper.Start(ctrl.SetupSignalHandler(), 24*time.Hour)
+
+	setupLog.Info("starting manager")
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		setupLog.Error(err, "problem running manager")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if metricsCertWatcher != nil {

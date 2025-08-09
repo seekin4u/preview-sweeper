@@ -7,5 +7,5 @@ metadata:
   name: manager-role
 rules:
 - apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["get", "list", "watch"]
+  resources: ["namespaces"]
+  verbs: ["list", "get", "delete"]

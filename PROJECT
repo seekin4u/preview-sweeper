@@ -8,4 +8,9 @@ layout:
 - go.kubebuilder.io/v4
 projectName: preview-sweeper
 repo: github.com/seekin4u/preview-sweeper
+resources:
+- controller: true
+  domain: maxsauce.com
+  kind: PreviewSweeper
+  version: v1
 version: "3"
