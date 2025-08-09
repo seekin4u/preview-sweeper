@@ -27,7 +27,8 @@ import (
 )
 
 type NamespaceSweeper struct {
-	client.Client
+	Client client.Client
+	TTL    time.Duration
 }
 
 func (s *NamespaceSweeper) Start(ctx context.Context, interval time.Duration) {
@@ -56,7 +57,7 @@ func (s *NamespaceSweeper) Start(ctx context.Context, interval time.Duration) {
 				for _, ns := range nsList.Items {
 					if strings.HasPrefix(ns.Name, "preview-") {
 						age := now.Sub(ns.CreationTimestamp.Time)
-						if age > 72*time.Hour {
+						if age > s.TTL {
 							logger.Info("Deleting expired namespace", "name", ns.Name, "age", age)
 							if err := s.Client.Delete(ctx, &ns); err != nil {
 								logger.Error(err, "Failed to delete namespace", "name", ns.Name)
