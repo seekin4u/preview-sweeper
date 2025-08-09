@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -169,7 +170,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("Starting manager")
+	setupLog.Info(fmt.Sprintf(
+		"Starting manager: SweepEvery(%s), TTL(%s)",
+		sweepEvery, ttl,
+	))
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "Problem running manager")
 		os.Exit(1)
