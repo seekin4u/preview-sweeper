@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: ghcr.io/seekin4u/preview-sweeper
-  newTag: v0.0.2
+  newTag: v0.0.3

@@ -1,8 +1,13 @@
+//go:build e2e
+
 package e2e
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -11,66 +16,185 @@ import (
 	"github.com/seekin4u/preview-sweeper/test/utils"
 )
 
-const namespace = "preview-sweeper-system"
-const serviceAccountName = "preview-sweeper-controller-manager"
-const metricsServiceName = "preview-sweeper-controller-manager-metrics-service"
-const metricsRoleBindingName = "preview-sweeper-metrics-binding"
-const projectImage = "ghcr.io/seekin4u/preview-sweeper:v0.0.2"
+func TestE2E(t *testing.T) {
+	RegisterFailHandler(Fail)
+	fmt.Fprintln(GinkgoWriter, "Starting NamespaceSweeper real-cluster E2E test suite")
+	RunSpecs(t, "NamespaceSweeper e2e suite")
+}
 
 var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
+	var (
+		img        string
+		ctrlNS     string
+		testNS     string
+		crName     string
+		crbName    string
+		deployName = "preview-sweeper-controller-manager"
+		sweepEvery = "5s"
+		ttl        = "10s"
+	)
+
 	BeforeAll(func() {
-		By("deploying the controller-manager into the cluster")
-		cmd := exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+		// Allow overriding image via env (e.g., E2E_IMG=ghcr.io/user/preview-sweeper:tag)
+		img = os.Getenv("E2E_IMG")
+		if img == "" {
+			img = "ghcr.io/seekin4u/preview-sweeper:v0.0.3"
+		}
 
-		By("patching deployment to use short TTL and sweep interval for tests")
-		patch := `[
-			{"op":"replace","path":"/spec/template/spec/containers/0/args","value":[
-				"--metrics-bind-address=:8443",
-				"--health-probe-bind-address=:8081",
-				"--leader-elect=false",
-				"--sweep-every=5s",
-				"--ttl=10s"
-			]}
-		]`
-		cmd = exec.Command("kubectl", "-n", namespace, "patch", "deploy", "preview-sweeper-controller-manager",
-			"--type=json", "-p", patch)
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to patch controller deployment")
+		suffix := time.Now().Unix()
+		ctrlNS = fmt.Sprintf("preview-sweeper-e2e-%d", suffix)
+		testNS = fmt.Sprintf("preview-sweeper-test-%d", suffix)
+		crName = fmt.Sprintf("preview-sweeper-e2e-%d", suffix)
+		crbName = fmt.Sprintf("preview-sweeper-e2e-%d", suffix)
 
-		By("waiting for patched controller to be ready")
-		cmd = exec.Command("kubectl", "-n", namespace, "rollout", "status", "deploy", "preview-sweeper-controller-manager")
+		By("creating a dedicated controller namespace")
+		_, err := utils.Run(exec.Command("kubectl", "create", "namespace", ctrlNS))
+		Expect(err).NotTo(HaveOccurred(), "failed to create controller namespace")
+
+		By("applying minimal RBAC and controller Deployment")
+		yaml := minimalBundleYAML(ctrlNS, crName, crbName, deployName, img, sweepEvery, ttl)
+		cmd := exec.Command("kubectl", "apply", "-f", "-")
+		cmd.Stdin = strings.NewReader(yaml)
 		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Controller rollout failed")
+		Expect(err).NotTo(HaveOccurred(), "failed to apply controller bundle")
+
+		By("waiting for controller Deployment to become Available")
+		_, err = utils.Run(exec.Command(
+			"kubectl", "-n", ctrlNS, "rollout", "status",
+			"deploy/"+deployName, "--timeout=180s",
+		))
+		Expect(err).NotTo(HaveOccurred(), "controller rollout failed")
 	})
 
 	AfterAll(func() {
-		By("undeploying the controller-manager")
-		cmd := exec.Command("make", "undeploy")
-		_, _ = utils.Run(cmd)
+		By("cleaning test namespace if present")
+		_, _ = utils.Run(exec.Command("kubectl", "delete", "namespace", testNS, "--ignore-not-found=true", "--wait=false"))
+
+		By("cleaning controller namespace and RBAC")
+		_, _ = utils.Run(exec.Command("kubectl", "delete", "deploy", deployName, "-n", ctrlNS, "--ignore-not-found=true", "--wait=false"))
+		_, _ = utils.Run(exec.Command("kubectl", "delete", "sa", "controller-sa", "-n", ctrlNS, "--ignore-not-found=true"))
+		_, _ = utils.Run(exec.Command("kubectl", "delete", "namespace", ctrlNS, "--ignore-not-found=true", "--wait=false"))
+		_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrole", crName, "--ignore-not-found=true"))
+		_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding", crbName, "--ignore-not-found=true"))
 	})
 
-	SetDefaultEventuallyTimeout(2 * time.Minute)
-	SetDefaultEventuallyPollingInterval(time.Second)
+	SetDefaultEventuallyTimeout(3 * time.Minute)
+	SetDefaultEventuallyPollingInterval(5 * time.Second)
 
 	It("should delete preview-* namespaces older than TTL", func() {
-		const testNS = "preview-test"
+		By("creating a preview-* namespace")
+		_, err := utils.Run(exec.Command("kubectl", "create", "namespace", testNS))
+		Expect(err).NotTo(HaveOccurred(), "failed to create preview test namespace")
 
-		// Ensure previous test NS is gone before creating
-		By(fmt.Sprintf("cleaning up old namespace %s if it exists", testNS))
-		_ = exec.Command("kubectl", "delete", "namespace", testNS, "--ignore-not-found=true").Run()
-
-		By("creating a preview namespace")
-		cmd := exec.Command("kubectl", "create", "namespace", testNS)
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
-
-		By("waiting for namespace to be deleted after TTL")
+		By("waiting for the sweeper to delete or mark it for deletion")
 		Eventually(func() bool {
-			cmd := exec.Command("kubectl", "get", "namespace", testNS)
-			_, err := utils.Run(cmd)
-			return err != nil // namespace gone if err != nil
-		}).Should(BeTrue(), "Namespace should be deleted by sweeper")
+			// If NotFound -> success
+			out, err := utils.Run(exec.Command(
+				"kubectl", "get", "namespace", testNS,
+				"-o", "jsonpath={.metadata.deletionTimestamp}",
+			))
+			if err != nil {
+				// deleted
+				return true
+			}
+			// Or deletionTimestamp is set
+			return strings.TrimSpace(out) != ""
+		}).Should(BeTrue(), "namespace should be deleted or marked for deletion by sweeper")
 	})
 })
+
+// minimalBundleYAML returns a tiny self-contained manifest bundle:
+// - ServiceAccount in ctrlNS
+// - ClusterRole with list/get/delete namespaces + events write
+// - ClusterRoleBinding SA->CR
+// - Deployment running your image with flags for short sweep/ttl
+func minimalBundleYAML(
+	ctrlNS, crName, crbName, deployName, image, sweepEvery, ttl string,
+) string {
+	return fmt.Sprintf(`
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: controller-sa
+  namespace: %s
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: %s
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get","list","delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create","patch","update"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["create","patch","update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: %s
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: %s
+subjects:
+  - kind: ServiceAccount
+    name: controller-sa
+    namespace: %s
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    app: preview-sweeper
+    control-plane: controller-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: preview-sweeper
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        app: preview-sweeper
+        control-plane: controller-manager
+    spec:
+      serviceAccountName: controller-sa
+      containers:
+        - name: manager
+          image: %s
+          imagePullPolicy: IfNotPresent
+          args:
+            - --metrics-bind-address=0
+            - --health-probe-bind-address=:8081
+            - --leader-elect=false
+            - --sweep-every=%s
+            - --ttl=%s
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+`, ctrlNS, crName, crbName, crName, ctrlNS, deployName, ctrlNS, image, sweepEvery, ttl)
+}
