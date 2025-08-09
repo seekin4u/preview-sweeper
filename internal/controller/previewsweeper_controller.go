@@ -57,6 +57,9 @@ func (s *NamespaceSweeper) Start(ctx context.Context, interval time.Duration) {
 
 				now := time.Now()
 				for _, ns := range nsList.Items {
+					if ns.DeletionTimestamp != nil {
+						continue
+					}
 					if strings.HasPrefix(ns.Name, "preview-") {
 						age := now.Sub(ns.CreationTimestamp.Time)
 						if age > s.TTL {

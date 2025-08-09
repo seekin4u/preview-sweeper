@@ -1,30 +1,103 @@
-/*
-Copyright 2025.
+package controller_test
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+import (
+	"context"
+	"time"
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
 
-package controller
+var _ = Describe("NamespaceSweeper", func() {
+	var ctx context.Context
 
-// . "github.com/onsi/ginkgo/v2"
+	BeforeEach(func() {
+		ctx = context.Background()
+		// Comfortable defaults for tiny TTL/interval in tests
+		SetDefaultEventuallyTimeout(5 * time.Second)
+		SetDefaultEventuallyPollingInterval(100 * time.Millisecond)
+		SetDefaultConsistentlyDuration(1 * time.Second)
+		SetDefaultConsistentlyPollingInterval(100 * time.Millisecond)
+	})
 
-// var _ = Describe("PreviewSweeper Controller", func() {
-// 	Context("When reconciling a resource", func() {
+	It("deletes preview-* namespaces older than TTL (marks for deletion in envtest)", func() {
+		ns := &corev1.Namespace{}
+		ns.Name = "preview-old-1"
 
-// 		It("should successfully reconcile the resource", func() {
+		By("creating a preview namespace")
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 
-// 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-// 			// Example: If you expect a certain status condition after reconciliation, verify it here.
-// 		})
-// 	})
-// })
+		By("waiting for the namespace to exceed TTL")
+		time.Sleep(testTTL + 300*time.Millisecond)
+
+		By("eventually observing it marked for deletion (envtest won’t fully remove it)")
+		Eventually(func() bool {
+			cur := &corev1.Namespace{}
+			err := k8sClient.Get(ctx, client.ObjectKey{Name: ns.Name}, cur)
+			if apierrors.IsNotFound(err) {
+				// In a real cluster you may reach NotFound; treat as success.
+				return true
+			}
+			Expect(err).NotTo(HaveOccurred())
+			return cur.DeletionTimestamp != nil
+		}).Should(BeTrue(), "expected preview namespace to be marked for deletion after TTL")
+	})
+
+	It("does NOT delete namespaces that don't match the preview-* prefix", func() {
+		ns := &corev1.Namespace{}
+		ns.Name = "prod-stable"
+
+		By("creating a non-preview namespace")
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+		// Let several sweeps run
+		time.Sleep(testTTL + 2*testSweepEvery)
+
+		By("ensuring it still exists and is not being deleted")
+		Consistently(func() bool {
+			cur := &corev1.Namespace{}
+			err := k8sClient.Get(ctx, client.ObjectKey{Name: ns.Name}, cur)
+			if apierrors.IsNotFound(err) {
+				return false
+			}
+			Expect(err).NotTo(HaveOccurred())
+			return cur.DeletionTimestamp == nil
+		}).Should(BeTrue(), "non-preview namespace must not be deleted")
+	})
+
+	It("keeps young preview namespaces until they age past TTL, then marks them for deletion", func() {
+		ns := &corev1.Namespace{}
+		ns.Name = "preview-young"
+
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+		By("ensuring it exists before TTL passes (no deletion timestamp)")
+		Consistently(func() bool {
+			cur := &corev1.Namespace{}
+			err := k8sClient.Get(ctx, client.ObjectKey{Name: ns.Name}, cur)
+			if apierrors.IsNotFound(err) {
+				return false
+			}
+			Expect(err).NotTo(HaveOccurred())
+			return cur.DeletionTimestamp == nil
+		}).Should(BeTrue(), "preview namespace should not be deleted before TTL")
+
+		By("waiting until it ages past TTL")
+		time.Sleep(testTTL + 300*time.Millisecond)
+
+		By("eventually observing deletion start (DeletionTimestamp set)")
+		Eventually(func() bool {
+			cur := &corev1.Namespace{}
+			err := k8sClient.Get(ctx, client.ObjectKey{Name: ns.Name}, cur)
+			if apierrors.IsNotFound(err) {
+				return true // acceptable in real clusters
+			}
+			Expect(err).NotTo(HaveOccurred())
+			return cur.DeletionTimestamp != nil
+		}).Should(BeTrue(), "should be marked for deletion after TTL")
+	})
+})

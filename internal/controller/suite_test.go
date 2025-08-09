@@ -1,105 +1,96 @@
-/*
-Copyright 2025.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
-package controller
+package controller_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
 
-	// . "github.com/onsi/ginkgo/v2"
-	// . "github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	// +kubebuilder:scaffold:imports
-)
 
-// These tests use Ginkgo (BDD-style Go testing framework). Refer to
-// http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/seekin4u/preview-sweeper/internal/controller"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+)
 
 var (
-	ctx       context.Context
-	cancel    context.CancelFunc
-	testEnv   *envtest.Environment
-	cfg       *rest.Config
-	k8sClient client.Client
+	testEnv    *envtest.Environment
+	cfg        *rest.Config
+	k8sClient  client.Client
+	k8sManager ctrl.Manager
+	ctx        context.Context
+	cancel     context.CancelFunc
+
+	testTTL        = 3 * time.Second
+	testSweepEvery = 500 * time.Millisecond
 )
 
-// func TestControllers(t *testing.T) {
-// 	RegisterFailHandler(Fail)
+func TestAPIs(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Namespace Sweeper Suite")
+}
 
-// 	RunSpecs(t, "Controller Suite")
-// }
+var _ = BeforeSuite(func() {
+	ctrl.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-// var _ = BeforeSuite(func() {
-// 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	By("bootstrapping test environment")
+	crdPath := filepath.Join("..", "..", "config", "crd", "bases")
+	testEnv = &envtest.Environment{
+		CRDDirectoryPaths:     []string{crdPath},
+		ErrorIfCRDPathMissing: false,
+	}
 
-// 	ctx, cancel = context.WithCancel(context.TODO())
+	var err error
+	cfg, err = testEnv.Start()
+	Expect(err).NotTo(HaveOccurred())
+	Expect(cfg).NotTo(BeNil())
 
-// 	var err error
-// 	// +kubebuilder:scaffold:scheme
+	// scheme
+	scheme := runtime.NewScheme()
+	Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+	Expect(corev1.AddToScheme(scheme)).To(Succeed())
 
-// 	By("bootstrapping test environment")
-// 	testEnv = &envtest.Environment{
-// 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
-// 		ErrorIfCRDPathMissing: false,
-// 	}
+	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
+		Scheme:                 scheme,
+		Metrics:                metricsserver.Options{BindAddress: "0"},
+		HealthProbeBindAddress: "0",
+		// WebhookServer: nil (default)
+	})
+	Expect(err).NotTo(HaveOccurred())
 
-// 	// Retrieve the first found binary directory to allow running tests from IDEs
-// 	if getFirstFoundEnvTestBinaryDir() != "" {
-// 		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
-// 	}
+	k8sClient = k8sManager.GetClient()
+	Expect(k8sClient).NotTo(BeNil())
 
-// 	// cfg is defined in this file globally.
-// 	cfg, err = testEnv.Start()
-// 	Expect(err).NotTo(HaveOccurred())
-// 	Expect(cfg).NotTo(BeNil())
+	// start sweeper
+	ctx, cancel = context.WithCancel(context.Background())
+	sw := &controller.NamespaceSweeper{
+		Client: k8sClient,
+		TTL:    testTTL,
+	}
+	sw.Start(ctx, testSweepEvery)
 
-// 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-// 	Expect(err).NotTo(HaveOccurred())
-// 	Expect(k8sClient).NotTo(BeNil())
-// })
+	// start manager in background
+	go func() {
+		defer GinkgoRecover()
+		Expect(k8sManager.Start(ctx)).To(Succeed())
+	}()
+})
 
-// var _ = AfterSuite(func() {
-// 	By("tearing down the test environment")
-// 	cancel()
-// 	err := testEnv.Stop()
-// 	Expect(err).NotTo(HaveOccurred())
-// })
-
-// // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
-// // ENVTEST-based tests depend on specific binaries, usually located in paths set by
-// // controller-runtime. When running tests directly (e.g., via an IDE) without using
-// // Makefile targets, the 'BinaryAssetsDirectory' must be explicitly configured.
-// //
-// // This function streamlines the process by finding the required binaries, similar to
-// // setting the 'KUBEBUILDER_ASSETS' environment variable. To ensure the binaries are
-// // properly set up, run 'make setup-envtest' beforehand.
-// func getFirstFoundEnvTestBinaryDir() string {
-// 	basePath := filepath.Join("..", "..", "bin", "k8s")
-// 	entries, err := os.ReadDir(basePath)
-// 	if err != nil {
-// 		logf.Log.Error(err, "Failed to read directory", "path", basePath)
-// 		return ""
-// 	}
-// 	for _, entry := range entries {
-// 		if entry.IsDir() {
-// 			return filepath.Join(basePath, entry.Name())
-// 		}
-// 	}
-// 	return ""
-// }
+var _ = AfterSuite(func() {
+	if cancel != nil {
+		cancel()
+	}
+	Expect(testEnv.Stop()).To(Succeed())
+	_ = os.Setenv("GINKGO_EDITOR_INTEGRATION", "true")
+})
