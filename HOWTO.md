@@ -24,3 +24,4 @@ docker buildx build \
   -t <REGISTRY>/<REPO>:arm64 \
   --push .
   
+  
