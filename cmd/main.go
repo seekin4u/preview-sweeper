@@ -23,6 +23,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
+// Defaults from flag definitions
+const (
+	defaultSweepEvery = 24 * time.Hour
+	defaultTTL        = 72 * time.Hour
+)
+
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
@@ -58,12 +64,41 @@ func main() {
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "Enable HTTP/2 for metrics/webhooks")
 
 	// Sweeper flags
-	flag.DurationVar(&sweepEvery, "sweep-every", 24*time.Hour, "How often to sweep namespaces")
-	flag.DurationVar(&ttl, "ttl", 72*time.Hour, "Namespace TTL before deletion")
+	flag.DurationVar(&sweepEvery, "sweep-every", defaultSweepEvery, "How often to sweep namespaces")
+	flag.DurationVar(&ttl, "ttl", defaultTTL, "Namespace TTL before deletion")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	// Allow overriding from environment variables (useful for tests)
+	if envVal := os.Getenv("SWEEP_EVERY"); envVal != "" {
+		if dur, err := time.ParseDuration(envVal); err == nil {
+			sweepEvery = dur
+		}
+	}
+	if envVal := os.Getenv("TTL"); envVal != "" {
+		if dur, err := time.ParseDuration(envVal); err == nil {
+			ttl = dur
+		}
+	}
+
+	// Sanity checks
+	if ttl <= 0 {
+		setupLog.Info("TTL was <= 0, setting to default", "defaultTTL", defaultTTL)
+		ttl = defaultTTL
+	}
+	if sweepEvery <= 0 {
+		setupLog.Info("SweepEvery was <= 0, setting to default", "defaultSweepEvery", defaultSweepEvery)
+		sweepEvery = defaultSweepEvery
+	}
+
+	setupLog.Info("Configuration parsed",
+		"SweepEvery", sweepEvery,
+		"TTL", ttl,
+		"MetricsAddr", metricsAddr,
+		"LeaderElect", enableLeaderElection,
+	)
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
