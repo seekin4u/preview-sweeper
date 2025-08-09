@@ -6,33 +6,67 @@ on:
 
 jobs:
   test-e2e:
-    name: Run on Ubuntu
+    name: Run on Ubuntu (Kind)
     runs-on: ubuntu-latest
+
     steps:
-      - name: Clone the code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: true
 
-      - name: Install the latest version of kind
+      - name: Install kind
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
+          kind version
 
-      - name: Verify kind installation
-        run: kind version
-      
-      # - name: Debug kubectl context
-      #   run: |
-      #     kubectl config get-contexts
-      #     kubectl config current-context
-      #     kubectl cluster-info
-
-      - name: Running Test e2e
+      - name: Create kind cluster
         run: |
-          go mod tidy
-          make test-e2e
+          kind create cluster --name e2e --image kindest/node:v1.30.0
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Build controller image (local)
+        run: |
+          docker build -t preview-sweeper:e2e -f Dockerfile .
+
+      - name: Load image into kind
+        run: |
+          kind load docker-image preview-sweeper:e2e --name e2e
+          # sanity: ensure it's in the node cache
+          docker image inspect preview-sweeper:e2e >/dev/null
+
+      - name: Run E2E tests against kind
+        env:
+          # Tell the E2E to use the image we just built & loaded
+          E2E_IMG: preview-sweeper:e2e
+        run: |
+          kubectl config get-contexts
+          kubectl config current-context
+
+          go test -tags=e2e ./test/e2e -v -count=1
+
+      - name: Dump controller logs on failure
+        if: failure()
+        run: |
+          # best-effort log collection from any controller pod in any test namespace
+          for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep 'preview-sweeper-e2e-' || true); do
+            echo "=== Logs from namespace: $ns ==="
+            kubectl -n "$ns" get all || true
+            for pod in $(kubectl -n "$ns" get pods -l control-plane=controller-manager -o jsonpath='{.items[*].metadata.name}' || true); do
+              echo "--- logs $ns/$pod ---"
+              kubectl -n "$ns" logs "$pod" || true
+              echo "---------------------"
+            done
+          done
+
+      - name: Cleanup kind
+        if: always()
+        run: |
+          kind delete cluster --name e2e
