@@ -39,12 +39,14 @@ jobs:
       - name: Load image into kind
         run: |
           kind load docker-image preview-sweeper:e2e --name e2e
-          # sanity: ensure it's in the node cache
           docker image inspect preview-sweeper:e2e >/dev/null
+
+      - name: Run unit/integration (envtest) tests
+        run: |
+          go test ./internal/... -count=1 -v
 
       - name: Run E2E tests against kind
         env:
-          # Tell the E2E to use the image we just built & loaded
           E2E_IMG: preview-sweeper:e2e
         run: |
           kubectl config get-contexts
@@ -55,16 +57,22 @@ jobs:
       - name: Dump controller logs on failure
         if: failure()
         run: |
-          # best-effort log collection from any controller pod in any test namespace
           for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep 'preview-sweeper-e2e-' || true); do
             echo "=== Logs from namespace: $ns ==="
             kubectl -n "$ns" get all || true
+            #control-plane=controller-manager is set by default in /config/manager/manager.go
             for pod in $(kubectl -n "$ns" get pods -l control-plane=controller-manager -o jsonpath='{.items[*].metadata.name}' || true); do
               echo "--- logs $ns/$pod ---"
               kubectl -n "$ns" logs "$pod" || true
               echo "---------------------"
             done
           done
+      
+      - name: Dump all cluster events on failure
+        if: failure()
+        run: |
+          echo "=== Dumping all events from all namespaces ==="
+          kubectl get events --all-namespaces -o yaml || true
 
       - name: Cleanup kind
         if: always()
