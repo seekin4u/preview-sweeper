@@ -41,21 +41,12 @@ jobs:
           kind load docker-image preview-sweeper:e2e --name e2e
           docker image inspect preview-sweeper:e2e >/dev/null
 
-      - name: Install envtest tools
+      - name: Install envtest binaries and set env
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-
-      - name: Fetch envtest binaries and export path
-        env:
-          K8S_VERSION: 1.30.x
-        run: |
-          # Show installed versions (and download cache if missing)
-          setup-envtest list -i
-          # Download the requested version for linux/amd64 and print only the bin path
-          ASSETS="$(setup-envtest use ${K8S_VERSION} --os linux --arch amd64 -i -p path)"
-          echo "KUBEBUILDER_ASSETS=${ASSETS}" >> $GITHUB_ENV
-          echo "Using envtest assets at: ${ASSETS}"
-          ls -l "${ASSETS}"
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          eval "$(setup-envtest use -p env 1.30.x)"
+          echo "KUBEBUILDER_ASSETS=${KUBEBUILDER_ASSETS}" >> $GITHUB_ENV
 
       - name: Run unit/integration (envtest) tests
         run: |
