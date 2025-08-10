@@ -41,10 +41,17 @@ jobs:
           kind load docker-image preview-sweeper:e2e --name e2e
           docker image inspect preview-sweeper:e2e >/dev/null
 
-      - name: Run unit/integration (envtest) tests
+      - name: Install envtest tools
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-          export KUBEBUILDER_ASSETS=$(setup-envtest use -i -p path 1.30.x)
+
+      - name: Download Kubernetes envtest binaries
+        run: |
+          # Downloads and extracts etcd, kube-apiserver, kubectl into a temp dir
+          echo "KUBEBUILDER_ASSETS=$(setup-envtest use 1.30.x --bin-dir /tmp/envtest --arch amd64 --os linux --install --print-path)" >> $GITHUB_ENV
+
+      - name: Run unit/integration (envtest) tests
+        run: |
           go test ./internal/... -count=1 -v
 
       - name: Run E2E tests against kind
