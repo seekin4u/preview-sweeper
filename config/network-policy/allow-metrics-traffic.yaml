@@ -12,7 +12,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      control-plane: controller-manager
+      control-plane: preview-sweeper-controller
       app.kubernetes.io/name: preview-sweeper
   policyTypes:
     - Ingress

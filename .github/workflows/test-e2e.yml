@@ -43,6 +43,8 @@ jobs:
 
       - name: Run unit/integration (envtest) tests
         run: |
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+          export KUBEBUILDER_ASSETS=$(setup-envtest use -i -p path 1.30.x)
           go test ./internal/... -count=1 -v
 
       - name: Run E2E tests against kind
@@ -60,8 +62,8 @@ jobs:
           for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep 'preview-sweeper-e2e-' || true); do
             echo "=== Logs from namespace: $ns ==="
             kubectl -n "$ns" get all || true
-            #control-plane=controller-manager is set by default in /config/manager/manager.go
-            for pod in $(kubectl -n "$ns" get pods -l control-plane=controller-manager -o jsonpath='{.items[*].metadata.name}' || true); do
+            #control-plane=preview-sweeper-controller is set by default in /config/manager/manager.go
+            for pod in $(kubectl -n "$ns" get pods -l control-plane=preview-sweeper-controller -o jsonpath='{.items[*].metadata.name}' || true); do
               echo "--- logs $ns/$pod ---"
               kubectl -n "$ns" logs "$pod" || true
               echo "---------------------"
