@@ -1,0 +1,45 @@
+image:
+  repository: ghcr.io/seekin4u/preview-sweeper
+  tag: arm64
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+#controller envs
+sweepEvery: "24h"
+ttl: "72h"
+
+metrics:
+  enabled: true
+  port: 8443
+  secure: true
+  monitoringns: "monitoring"
+
+leaderElection:
+  enabled: false
+  id: preview-sweeper.maxsauce.com
+
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: ""
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ "ALL" ]

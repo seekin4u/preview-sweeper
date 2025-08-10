@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "preview-sweeper.fullname" . }}
+  labels:
+    {{- include "preview-sweeper.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "preview-sweeper.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "preview-sweeper.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ default (include "preview-sweeper.fullname" .) .Values.serviceAccount.name }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: manager
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "--metrics-bind-address={{ if .Values.metrics.enabled }}:{{ .Values.metrics.port }}{{ else }}0{{ end }}"
+            - "--health-probe-bind-address=:8081"
+          env:
+            # Your main runtime knobs come from env (main.go supports SWEEP_EVERY / TTL)
+            - name: SWEEP_EVERY
+              value: "{{ .Values.sweepEvery }}"
+            - name: TTL
+              value: "{{ .Values.ttl }}"
+          ports:
+            {{- if .Values.metrics.enabled }}
+            - name: https-metrics
+              containerPort: {{ .Values.metrics.port }}
+            {{- end }}
+            - name: healthz
+              containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: healthz
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

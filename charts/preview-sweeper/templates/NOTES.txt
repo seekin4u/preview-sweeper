@@ -1,0 +1,20 @@
+{{- /* -------- Controller metadata -------- */ -}}
+{{- $ns := .Release.Namespace -}}
+{{- $name := include "preview-sweeper.name" . -}}
+{{- $fullname := include "preview-sweeper.fullname" . -}}
+{{- $selector := printf "app.kubernetes.io/name=%s,app.kubernetes.io/instance=%s" $name .Release.Name -}}
+
+1) Controller info
+   Namespace: {{ $ns }}
+
+   # Get the controller Pod name (first matching Pod)
+   export POD_NAME=$(kubectl get pods -n {{ $ns }} -l "{{ $selector }}" -o jsonpath="{.items[0].metadata.name}")
+   echo "Controller Pod: $POD_NAME"
+
+2) Intended settings (from Helm values)
+   TTL: {{ .Values.ttl | default "72h" }}
+   Sweep Every: {{ .Values.sweepEvery | default "24h" }}
+
+3) Live settings (from the running Pod's ENV)
+   kubectl -n {{ $ns }} get pod "$POD_NAME" -o jsonpath='{.spec.containers[?(@.name=="manager")].env[?(@.name=="TTL")].value}'; echo
+   kubectl -n {{ $ns }} get pod "$POD_NAME" -o jsonpath='{.spec.containers[?(@.name=="manager")].env[?(@.name=="SWEEP_EVERY")].value}'; echo

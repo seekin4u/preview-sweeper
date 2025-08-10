@@ -1,0 +1,17 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "preview-sweeper.fullname" . }}-metrics
+  labels:
+    {{- include "preview-sweeper.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "preview-sweeper.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: https-metrics
+      port: {{ .Values.metrics.port }}
+      targetPort: https-metrics
+{{- end }}
