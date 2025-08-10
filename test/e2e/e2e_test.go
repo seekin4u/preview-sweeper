@@ -152,18 +152,18 @@ metadata:
   namespace: %s
   labels:
     app: preview-sweeper
-    control-plane: controller-manager
+    control-plane: preview-sweeper-controller
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: preview-sweeper
-      control-plane: controller-manager
+      control-plane: preview-sweeper-controller
   template:
     metadata:
       labels:
         app: preview-sweeper
-        control-plane: controller-manager
+        control-plane: preview-sweeper-controller
     spec:
       serviceAccountName: controller-sa
       containers:
