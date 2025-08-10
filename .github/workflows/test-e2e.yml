@@ -47,8 +47,7 @@ jobs:
 
       - name: Download Kubernetes envtest binaries
         run: |
-          # Downloads and extracts etcd, kube-apiserver, kubectl into a temp dir
-          echo "KUBEBUILDER_ASSETS=$(setup-envtest use 1.30.x --bin-dir /tmp/envtest --arch amd64 --os linux --install --print-path)" >> $GITHUB_ENV
+           echo "KUBEBUILDER_ASSETS=$(setup-envtest use 1.30.x -i -p path)" >> $GITHUB_ENV
 
       - name: Run unit/integration (envtest) tests
         run: |
