@@ -7,7 +7,6 @@ maxsauce@192 ~/Desktop/preview-sweeper$ source ~/.zshrc
 maxsauce@192 ~/Desktop/preview-sweeper$ eval "$(setup-envtest use -p env 1.30.x)"
 maxsauce@192 ~/Desktop/preview-sweeper$ go test ./internal/... -count=1    //integrated unit tests
 maxsauce@192 ~/Desktop/preview-sweeper$ go test -tags=e2e ./test/e2e -v -count=1                 //tests on real cluster using my kubeconfig
-
 ---
 Build:
 ghcr-login (alias ghcr-login='security find-internet-password -s ghcr.io -w | docker login ghcr.io -u seekin4u --password-stdin')
@@ -18,15 +17,19 @@ docker push $IMG
 //for arm64 arch
 docker buildx create --use
 
-docker buildx build --platform linux/arm64 -t $IMG -f Dockerfile . 
-docker buildx build \
-  --platform linux/arm64 \
-  -t <REGISTRY>/<REPO>:arm64 \
-  --push .
+//helm build
+security find-internet-password -s ghcr.io -w | helm registry login ghcr.io -u seekin4u --password-stdin
+~/preview-sweeper/charts/preview-sweeper$ helm dependency update
+helm lint .
+helm package .
+helm push preview-sweeper-*.tgz oci://ghcr.io/seekin4u/helm
   
 ---
 Helm:
-helm upgrade --install preview-sweeper ./charts/preview-sweeper -n preview-sweeper --create-namespace -f ./charts/preview-sweeper/values.yaml
+Locally: helm upgrade --install preview-sweeper ./charts/preview-sweeper -n namespace-sweeper --create-namespace -f ./charts/preview-sweeper/values.yaml
+Remotely: helm upgrade --install preview-sweeper oci://ghcr.io/seekin4u/helm/preview-sweeper --version 0.1.1 -n namespace-sweeper --create-namespace -f values.yaml
+
+Uninstall: helm uninstall preview-sweeper --namespace=preview-sweeper
 
 ---
 Kyverno: 

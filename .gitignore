@@ -25,3 +25,4 @@ go.work
 *.swp
 *.swo
 *~
+charts/preview-sweeper/preview-sweeper-0.1.1.tgz
