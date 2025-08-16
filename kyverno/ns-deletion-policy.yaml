@@ -3,7 +3,6 @@ kind: ClusterPolicy
 metadata:
   name: allow-delete-only-preview-namespaces
 spec:
-  # Enforce, Audit
   validationFailureAction: Enforce
   background: false
   rules:
@@ -31,4 +30,3 @@ spec:
                 - kube-public
                 - kube-node-lease
                 - kyverno
-

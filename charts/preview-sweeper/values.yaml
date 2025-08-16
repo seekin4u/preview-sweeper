@@ -6,8 +6,8 @@ image:
 replicaCount: 1
 
 #controller envs
-sweepEvery: "24h"
-ttl: "72h"
+sweepEvery: "1m"
+ttl: "2m"
 
 metrics:
   enabled: true
