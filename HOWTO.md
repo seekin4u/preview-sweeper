@@ -30,3 +30,11 @@ cd charts
 helm upgrade --install preview-sweeper ./preview-sweeper \                                                                      1 ↵  ✖ ✹ ✭main 
   -n preview-sweeper --create-namespace \
   -f ./preview-sweeper/values.yaml
+
+---
+Kyverno: 
+TESTING KYVERNO:
+helm repo add kyverno https://kyverno.github.io/kyverno/
+helm repo update
+helm upgrade --install kyverno kyverno/kyverno -n kyverno --create-namespace
+ kubectl apply -f ./kyverno/ns-deletion-policy.yaml 

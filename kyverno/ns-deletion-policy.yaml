@@ -1,0 +1,34 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: allow-delete-only-preview-namespaces
+spec:
+  # Enforce, Audit
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: allow-delete-preview-ns
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+      preconditions:
+        all:
+          - key: "{{ request.operation }}"
+            operator: Equals
+            value: "DELETE"
+      validate:
+        message: "Only namespaces with names matching 'preview-*' can be deleted."
+        pattern:
+          metadata:
+            name: "preview-*"
+      exclude:
+        any:
+          - resources:
+              names:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+
