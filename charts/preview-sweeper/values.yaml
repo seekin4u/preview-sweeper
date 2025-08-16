@@ -24,10 +24,6 @@ serviceMonitor:
   prometheusServiceAccount:
     name: monitoring-kube-prometheus-prometheus
 
-leaderElection:
-  enabled: false
-  id: preview-sweeper.maxsauce.com
-
 rbac:
   create: true
 
