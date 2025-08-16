@@ -1,0 +1,20 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "preview-sweeper.fullname" . }}-prom-metrics-reader
+rules:
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "preview-sweeper.fullname" . }}-prom-metrics-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "preview-sweeper.fullname" . }}-prom-metrics-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ default "kube-prometheus-stack-prometheus" .Values.serviceMonitor.prometheusServiceAccount.name }}
+    namespace: {{ default "monitoring" .Values.serviceMonitor.namespace }}

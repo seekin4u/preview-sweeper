@@ -15,6 +15,15 @@ metrics:
   secure: true
   monitoringns: "monitoring"
 
+#you cant set it to TRUE without CRDs
+serviceMonitor:
+  enabled: true
+  labels:
+    release: monitoring
+  namespace: monitoring
+  prometheusServiceAccount:
+    name: monitoring-kube-prometheus-prometheus
+
 leaderElection:
   enabled: false
   id: preview-sweeper.maxsauce.com
