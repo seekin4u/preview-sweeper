@@ -10,12 +10,3 @@
 2) Intended settings (from Helm values)
    TTL: {{ default "72h" .Values.ttl }}
    Sweep Every: {{ default "24h" .Values.sweepEvery }}
-
-3) Live settings (copy & paste to your shell)
-   kubectl -n {{ $ns }} wait --for=condition=Ready pod -l "{{ $selector }}" --timeout=180s
-   POD_NAME=$(kubectl -n {{ $ns }} get pods -l "{{ $selector }}" -o jsonpath='{.items[0].metadata.name}')
-   echo "Controller Pod: $POD_NAME"
-   echo -n "TTL: "
-   kubectl -n {{ $ns }} get pod "$POD_NAME" -o jsonpath='{.spec.containers[?(@.name=="manager")].env[?(@.name=="TTL")].value}'; echo
-   echo -n "SWEEP_EVERY: "
-   kubectl -n {{ $ns }} get pod "$POD_NAME" -o jsonpath='{.spec.containers[?(@.name=="manager")].env[?(@.name=="SWEEP_EVERY")].value}'; echo

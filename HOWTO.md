@@ -8,7 +8,7 @@ maxsauce@192 ~/Desktop/preview-sweeper$ eval "$(setup-envtest use -p env 1.30.x)
 maxsauce@192 ~/Desktop/preview-sweeper$ go test ./internal/... -count=1    //integrated unit tests
 maxsauce@192 ~/Desktop/preview-sweeper$ go test -tags=e2e ./test/e2e -v -count=1                 //tests on real cluster using my kubeconfig
 
------------------------------------------
+---
 Build:
 ghcr-login (alias ghcr-login='security find-internet-password -s ghcr.io -w | docker login ghcr.io -u seekin4u --password-stdin')
 export IMG=ghcr.io/seekin4u/preview-sweeper:v0.0.1
