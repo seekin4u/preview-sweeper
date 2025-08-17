@@ -29,7 +29,7 @@ Helm:
 Locally: helm upgrade --install preview-sweeper ./charts/preview-sweeper -n namespace-sweeper --create-namespace -f ./charts/preview-sweeper/values.yaml
 Remotely: helm upgrade --install preview-sweeper oci://ghcr.io/seekin4u/helm/preview-sweeper --version 0.1.1 -n namespace-sweeper --create-namespace -f values.yaml
 
-Uninstall: helm uninstall preview-sweeper --namespace=preview-sweeper
+Uninstall: helm uninstall preview-sweeper --namespace=namespace-sweeper
 
 ---
 Kyverno: 

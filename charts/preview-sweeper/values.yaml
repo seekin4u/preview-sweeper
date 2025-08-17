@@ -29,7 +29,7 @@ rbac:
 
 serviceAccount:
   create: true
-  name: ""
+  name: "sweeper-service-account"
 
 resources:
   requests:
