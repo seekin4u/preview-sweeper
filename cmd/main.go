@@ -177,11 +177,18 @@ func main() {
 
 	rec := mgr.GetEventRecorderFor("preview-sweeper")
 	sweeper := &controller.NamespaceSweeper{
-		Client:   mgr.GetClient(),
-		TTL:      ttl,
-		Recorder: rec,
+		Client:        mgr.GetClient(),
+		TTL:           ttl,
+		Recorder:      rec,
+		Interval:      sweepEvery,
+		JitterPercent: 0.05,
 	}
-	sweeper.Start(ctx, sweepEvery)
+
+	// letting manager to lifecycle
+	if err := mgr.Add(sweeper); err != nil {
+		setupLog.Error(err, "Unable to add namespace sweeper runnable")
+		os.Exit(1)
+	}
 
 	if metricsCertWatcher != nil {
 		if err := mgr.Add(metricsCertWatcher); err != nil {

@@ -73,9 +73,18 @@ var _ = BeforeSuite(func() {
 
 	ctx, cancel = context.WithCancel(context.Background())
 
+	sw := &controller.NamespaceSweeper{
+		Client:        k8sClient,
+		TTL:           testTTL,
+		Interval:      testSweepEvery,
+		JitterPercent: 0, // deterministic in tests
+	}
+	Expect(k8sManager.Add(sw)).To(Succeed())
+
 	// start manager in background
 	go func() {
 		defer GinkgoRecover()
+		//expect k8s manager to be initialized and started
 		Expect(k8sManager.Start(ctx)).To(Succeed())
 	}()
 
@@ -83,12 +92,6 @@ var _ = BeforeSuite(func() {
 	Eventually(func() bool {
 		return k8sManager.GetCache().WaitForCacheSync(ctx)
 	}, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
-
-	sw := &controller.NamespaceSweeper{
-		Client: k8sClient,
-		TTL:    testTTL,
-	}
-	sw.Start(ctx, testSweepEvery)
 })
 
 var _ = AfterSuite(func() {

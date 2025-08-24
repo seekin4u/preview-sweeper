@@ -15,7 +15,7 @@ import (
 
 const (
 	LabelPreview = "preview-sweeper.maxsauce.com/enabled"
-	// Optional TTL, supports time.ParseDuration formats (e.g., "2" (hours) "4h", "30m").
+	// Optional TTL, supports time.ParseDuration formats (e.g., "4h", "30m", "2h45m", or "69" (hours)).
 	AnnotationTTL = "preview-sweeper.maxsauce.com/ttl"
 )
 
@@ -23,70 +23,86 @@ type NamespaceSweeper struct {
 	Client   client.Client
 	TTL      time.Duration
 	Recorder record.EventRecorder
+
+	Interval      time.Duration // required
+	JitterPercent float64       // optional: e.g., 0.05 = +-5% jitter; 0 disables it.
 }
 
-func (s *NamespaceSweeper) Start(ctx context.Context, interval time.Duration) {
-	logger := log.FromContext(ctx)
+func (s *NamespaceSweeper) Start(ctx context.Context) error {
+	logger := log.FromContext(ctx).WithName("NamespaceSweeper")
+
+	if s.Interval <= 0 {
+		s.Interval = 24 * time.Hour
+	}
+
+	//no math.rand() here
+	firstDelay := s.withJitter(s.Interval, 0.1)
+	timer := time.NewTimer(firstDelay)
+	defer timer.Stop()
+
+	logger.Info("Namespace sweeper started", "interval", s.Interval, "initialDelay", firstDelay, "jitterPercent", s.JitterPercent)
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("Namespace sweeper stopped")
+			return nil
+
+		case <-timer.C:
+			s.SweepOnce(ctx)
+
+			next := s.withJitter(s.Interval, s.JitterPercent)
+			timer.Reset(next)
+		}
+	}
+}
+
+func (s *NamespaceSweeper) SweepOnce(ctx context.Context) {
+	logger := log.FromContext(ctx).WithName("NamespaceSweeper")
 
 	sel := labels.SelectorFromSet(labels.Set{LabelPreview: "true"})
 	listOpts := &client.ListOptions{LabelSelector: sel}
 
-	ticker := time.NewTicker(interval)
-	go func() {
-		defer ticker.Stop()
+	var nsList corev1.NamespaceList
+	// we get labeled "sweeper/enabled=true" namespaces.
+	if err := s.Client.List(ctx, &nsList, listOpts); err != nil {
+		logger.Error(err, "Failed to list namespaces")
+		return
+	}
 
-		for {
-			select {
-			case <-ctx.Done():
-				logger.Info("Namespace sweeper stopped")
-				return
+	now := time.Now()
+	for i := range nsList.Items {
+		ns := &nsList.Items[i]
+		if ns.DeletionTimestamp != nil {
+			continue
+		}
+		// from all labeled namespaces, we pick previews.
+		if !strings.HasPrefix(ns.Name, "preview-") {
+			continue
+		}
 
-			case <-ticker.C:
-				logger.Info("Starting namespace sweep")
+		effectiveTTL, ttlSrc := resolveTTL(ns.Annotations, s.TTL)
 
-				var nsList corev1.NamespaceList
-				if err := s.Client.List(ctx, &nsList, listOpts); err != nil {
-					logger.Error(err, "Failed to list namespaces")
-					continue
-				}
+		// could be outdated, but left just cause i can.
+		if effectiveTTL <= 0 {
+			logger.Info("Skipping namespace (non-positive TTL)", "name", ns.Name, "ttlSource", ttlSrc, "ttl", effectiveTTL.String())
+			continue
+		}
 
-				now := time.Now()
-				for i := range nsList.Items {
-					ns := &nsList.Items[i]
-					if ns.DeletionTimestamp != nil {
-						continue
-					}
-					if !strings.HasPrefix(ns.Name, "preview-") {
-						continue
-					}
-
-					// read TTL from annotation or use default if unset
-					// default is passed from Helm upon creation
-					effectiveTTL, ttlSrc := resolveTTL(ns.Annotations, s.TTL)
-
-					if effectiveTTL <= 0 {
-						logger.Info("Skipping namespace (non-positive TTL)", "name", ns.Name, "ttlSource", ttlSrc, "ttl", effectiveTTL.String())
-						continue
-					}
-
-					age := now.Sub(ns.CreationTimestamp.Time)
-					if age > effectiveTTL {
-						logger.Info("Deleting expired namespace", "name", ns.Name, "age", age, "ttlSource", ttlSrc, "ttl", effectiveTTL.String())
-						if err := s.Client.Delete(ctx, ns); err != nil {
-							logger.Error(err, "Failed to delete namespace", "name", ns.Name)
-						} else if s.Recorder != nil {
-							s.Recorder.Eventf(ns, corev1.EventTypeNormal, "NamespaceCleanup",
-								"Deleted namespace %q: age %s exceeded TTL %s (%s)", ns.Name, age, effectiveTTL, ttlSrc)
-						}
-					}
-				}
+		age := now.Sub(ns.CreationTimestamp.Time)
+		if age > effectiveTTL {
+			logger.Info("Deleting expired namespace", "name", ns.Name, "age", age, "ttlSource", ttlSrc, "ttl", effectiveTTL.String())
+			if err := s.Client.Delete(ctx, ns); err != nil {
+				logger.Error(err, "Failed to delete namespace", "name", ns.Name)
+			} else if s.Recorder != nil {
+				s.Recorder.Eventf(ns, corev1.EventTypeNormal, "NamespaceCleanup",
+					"Deleted namespace %q: age %s exceeded TTL %s (%s)", ns.Name, age, effectiveTTL, ttlSrc)
 			}
 		}
-	}()
+	}
 }
 
-// annotation example: preview-sweeper.maxsauce.com/ttl="4h", "30m", "2h45m", "69" (int = assuming hours).
-// returns the TTL and a short string describing the source ("annotation" or "default") - good for logs.
+// annotation example: preview-sweeper.maxsauce.com/ttl="4h", "30m", "2h45m", "69" (int = hours)
 func resolveTTL(annotations map[string]string, defaultTTL time.Duration) (time.Duration, string) {
 	if annotations != nil {
 		if raw, ok := annotations[AnnotationTTL]; ok {
@@ -102,4 +118,19 @@ func resolveTTL(annotations map[string]string, defaultTTL time.Duration) (time.D
 		}
 	}
 	return defaultTTL, "default"
+}
+
+// copied from the internets
+func (s *NamespaceSweeper) withJitter(base time.Duration, pct float64) time.Duration {
+	if pct <= 0 {
+		return base
+	}
+	// simple, deterministic jitter based on current time (no rand needed)
+	nanos := time.Now().UnixNano()
+	sign := int64(1)
+	if nanos&1 == 1 {
+		sign = -1
+	}
+	delta := time.Duration(float64(base) * pct)
+	return base + time.Duration(sign)*delta/2
 }
