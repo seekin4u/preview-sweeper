@@ -76,6 +76,10 @@ func (s *NamespaceSweeper) SweepOnce(ctx context.Context) {
 		if ns.DeletionTimestamp != nil {
 			continue
 		}
+
+		if ns.Name == "kube-system" || ns.Name == "default" || ns.Name == "kube-public" {
+			continue
+		}
 		// from all labeled namespaces, we pick previews.
 		if !strings.HasPrefix(ns.Name, "preview-") {
 			continue
