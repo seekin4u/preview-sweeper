@@ -16,7 +16,8 @@ import (
 const (
 	LabelPreview = "preview-sweeper.maxsauce.com/enabled"
 	// Optional TTL, supports time.ParseDuration formats (e.g., "4h", "30m", "2h45m", or "69" (hours)).
-	AnnotationTTL = "preview-sweeper.maxsauce.com/ttl"
+	AnnotationTTL  = "preview-sweeper.maxsauce.com/ttl"
+	AnnotationHold = "preview-sweeper.maxsauce.com/hold"
 )
 
 type NamespaceSweeper struct {
@@ -80,12 +81,18 @@ func (s *NamespaceSweeper) SweepOnce(ctx context.Context) {
 		if ns.Name == "kube-system" || ns.Name == "default" || ns.Name == "kube-public" {
 			continue
 		}
+
 		// from all labeled namespaces, we pick previews.
 		if !strings.HasPrefix(ns.Name, "preview-") {
 			continue
 		}
 
 		effectiveTTL, ttlSrc := resolveTTL(ns.Annotations, s.TTL)
+
+		if ns.Annotations[AnnotationHold] == "true" {
+			logger.Info("Skipping namespace (on-hold enabled)", "name", ns.Name, "ttlSource", ttlSrc, "ttl", effectiveTTL.String())
+			continue
+		}
 
 		// could be outdated, but left just cause i can.
 		if effectiveTTL <= 0 {
