@@ -56,7 +56,8 @@ func (s *NamespaceSweeper) Start(ctx context.Context, interval time.Duration) {
 				}
 
 				now := time.Now()
-				for _, ns := range nsList.Items {
+				for i := range nsList.Items {
+					ns := &nsList.Items[i]
 					if ns.DeletionTimestamp != nil {
 						continue
 					}
@@ -64,10 +65,10 @@ func (s *NamespaceSweeper) Start(ctx context.Context, interval time.Duration) {
 						age := now.Sub(ns.CreationTimestamp.Time)
 						if age > s.TTL {
 							logger.Info("Deleting expired namespace", "name", ns.Name, "age", age)
-							if err := s.Client.Delete(ctx, &ns); err != nil {
+							if err := s.Client.Delete(ctx, ns); err != nil {
 								logger.Error(err, "Failed to delete namespace", "name", ns.Name)
 							} else if s.Recorder != nil {
-								s.Recorder.Eventf(&ns, corev1.EventTypeNormal, "NamespaceCleanup",
+								s.Recorder.Eventf(ns, corev1.EventTypeNormal, "NamespaceCleanup",
 									"Deleted namespace %q, older than %s", ns.Name, s.TTL)
 							}
 						}
