@@ -65,26 +65,30 @@ var _ = BeforeSuite(func() {
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: "0"},
 		HealthProbeBindAddress: "0",
-		// WebhookServer: nil (default)
 	})
 	Expect(err).NotTo(HaveOccurred())
 
 	k8sClient = k8sManager.GetClient()
 	Expect(k8sClient).NotTo(BeNil())
 
-	// start sweeper
 	ctx, cancel = context.WithCancel(context.Background())
-	sw := &controller.NamespaceSweeper{
-		Client: k8sClient,
-		TTL:    testTTL,
-	}
-	sw.Start(ctx, testSweepEvery)
 
 	// start manager in background
 	go func() {
 		defer GinkgoRecover()
 		Expect(k8sManager.Start(ctx)).To(Succeed())
 	}()
+
+	By("waiting for manager cache to sync")
+	Eventually(func() bool {
+		return k8sManager.GetCache().WaitForCacheSync(ctx)
+	}, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+	sw := &controller.NamespaceSweeper{
+		Client: k8sClient,
+		TTL:    testTTL,
+	}
+	sw.Start(ctx, testSweepEvery)
 })
 
 var _ = AfterSuite(func() {

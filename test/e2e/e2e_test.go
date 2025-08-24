@@ -24,14 +24,15 @@ func TestE2E(t *testing.T) {
 
 var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
 	var (
-		img        string
-		ctrlNS     string
-		testNS     string
-		crName     string
-		crbName    string
-		deployName = "preview-sweeper-controller-manager"
-		sweepEvery = "5s"
-		ttl        = "10s"
+		img             string
+		ctrlNS          string
+		testNS          string
+		crName          string
+		crbName         string
+		deployName      = "preview-sweeper-controller-manager"
+		sweepEvery      = "5s"
+		ttl             = "10s"
+		previewLabelKey = "preview-sweeper.maxsauce.com/enabled"
 	)
 
 	BeforeAll(func() {
@@ -63,6 +64,15 @@ var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
 			"deploy/"+deployName, "--timeout=180s",
 		))
 		Expect(err).NotTo(HaveOccurred(), "controller rollout failed")
+
+		// some waiting here
+		By("waiting for controller Pod to be Ready")
+		_, err = utils.Run(exec.Command(
+			"kubectl", "-n", ctrlNS, "wait", "--for=condition=Ready",
+			"pod", "-l", "app=preview-sweeper,control-plane=preview-sweeper-controller",
+			"--timeout=120s",
+		))
+		Expect(err).NotTo(HaveOccurred(), "controller pod not ready")
 	})
 
 	AfterAll(func() {
@@ -84,6 +94,15 @@ var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
 		By("creating a preview-* namespace")
 		_, err := utils.Run(exec.Command("kubectl", "create", "namespace", testNS))
 		Expect(err).NotTo(HaveOccurred(), "failed to create preview test namespace")
+
+		// label or NS will be skipped straight outa
+		By("labeling the namespace to enable sweeping")
+		_, err = utils.Run(exec.Command(
+			"kubectl", "label", "namespace", testNS,
+			fmt.Sprintf("%s=true", previewLabelKey),
+			"--overwrite",
+		))
+		Expect(err).NotTo(HaveOccurred(), "failed to label preview test namespace")
 
 		By("waiting for the sweeper to delete or mark it for deletion")
 		Eventually(func() bool {

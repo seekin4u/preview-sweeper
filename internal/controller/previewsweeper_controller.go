@@ -1,30 +1,22 @@
-/*
-Copyright 2025.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package controller
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+const (
+	LabelPreview = "preview-sweeper.maxsauce.com/enabled"
+	// Optional TTL, supports time.ParseDuration formats (e.g., "2" (hours) "4h", "30m").
+	AnnotationTTL = "preview-sweeper.maxsauce.com/ttl"
 )
 
 type NamespaceSweeper struct {
@@ -35,6 +27,9 @@ type NamespaceSweeper struct {
 
 func (s *NamespaceSweeper) Start(ctx context.Context, interval time.Duration) {
 	logger := log.FromContext(ctx)
+
+	sel := labels.SelectorFromSet(labels.Set{LabelPreview: "true"})
+	listOpts := &client.ListOptions{LabelSelector: sel}
 
 	ticker := time.NewTicker(interval)
 	go func() {
@@ -50,7 +45,7 @@ func (s *NamespaceSweeper) Start(ctx context.Context, interval time.Duration) {
 				logger.Info("Starting namespace sweep")
 
 				var nsList corev1.NamespaceList
-				if err := s.Client.List(ctx, &nsList); err != nil {
+				if err := s.Client.List(ctx, &nsList, listOpts); err != nil {
 					logger.Error(err, "Failed to list namespaces")
 					continue
 				}
@@ -61,20 +56,50 @@ func (s *NamespaceSweeper) Start(ctx context.Context, interval time.Duration) {
 					if ns.DeletionTimestamp != nil {
 						continue
 					}
-					if strings.HasPrefix(ns.Name, "preview-") {
-						age := now.Sub(ns.CreationTimestamp.Time)
-						if age > s.TTL {
-							logger.Info("Deleting expired namespace", "name", ns.Name, "age", age)
-							if err := s.Client.Delete(ctx, ns); err != nil {
-								logger.Error(err, "Failed to delete namespace", "name", ns.Name)
-							} else if s.Recorder != nil {
-								s.Recorder.Eventf(ns, corev1.EventTypeNormal, "NamespaceCleanup",
-									"Deleted namespace %q, older than %s", ns.Name, s.TTL)
-							}
+					if !strings.HasPrefix(ns.Name, "preview-") {
+						continue
+					}
+
+					//read TTL from annotation or use default if unset
+					//default is passed from Helm upon creation
+					effectiveTTL, ttlSrc := resolveTTL(ns.Annotations, s.TTL)
+
+					if effectiveTTL <= 0 {
+						logger.Info("Skipping namespace (non-positive TTL)", "name", ns.Name, "ttlSource", ttlSrc, "ttl", effectiveTTL.String())
+						continue
+					}
+
+					age := now.Sub(ns.CreationTimestamp.Time)
+					if age > effectiveTTL {
+						logger.Info("Deleting expired namespace", "name", ns.Name, "age", age, "ttlSource", ttlSrc, "ttl", effectiveTTL.String())
+						if err := s.Client.Delete(ctx, ns); err != nil {
+							logger.Error(err, "Failed to delete namespace", "name", ns.Name)
+						} else if s.Recorder != nil {
+							s.Recorder.Eventf(ns, corev1.EventTypeNormal, "NamespaceCleanup",
+								"Deleted namespace %q: age %s exceeded TTL %s (%s)", ns.Name, age, effectiveTTL, ttlSrc)
 						}
 					}
 				}
 			}
 		}
 	}()
+}
+
+// annotation example: preview-sweeper.maxsauce.com/ttl="4h", "30m", "2h45m", "69" (int = assuming hours).
+// returns the TTL and a short string describing the source ("annotation" or "default") - good for logs.
+func resolveTTL(annotations map[string]string, defaultTTL time.Duration) (time.Duration, string) {
+	if annotations != nil {
+		if raw, ok := annotations[AnnotationTTL]; ok {
+			val := strings.TrimSpace(raw)
+			if val != "" {
+				if d, err := time.ParseDuration(val); err == nil {
+					return d, "annotation"
+				}
+				if n, err := strconv.Atoi(val); err == nil {
+					return time.Duration(n) * time.Hour, "annotation"
+				}
+			}
+		}
+	}
+	return defaultTTL, "default"
 }

@@ -14,6 +14,7 @@ import (
 
 var _ = Describe("NamespaceSweeper", func() {
 	var ctx context.Context
+	const labelPreview = "preview-sweeper.maxsauce.com/enabled"
 
 	BeforeEach(func() {
 		ctx = context.Background()
@@ -27,6 +28,7 @@ var _ = Describe("NamespaceSweeper", func() {
 	It("deletes preview-* namespaces older than TTL (marks for deletion in envtest)", func() {
 		ns := &corev1.Namespace{}
 		ns.Name = "preview-old-1"
+		ns.Labels = map[string]string{labelPreview: "true"}
 
 		By("creating a preview namespace")
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
@@ -50,6 +52,7 @@ var _ = Describe("NamespaceSweeper", func() {
 	It("does NOT delete namespaces that don't match the preview-* prefix", func() {
 		ns := &corev1.Namespace{}
 		ns.Name = "prod-stable"
+		// Intentionally NO preview label here.
 
 		By("creating a non-preview namespace")
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
@@ -72,6 +75,7 @@ var _ = Describe("NamespaceSweeper", func() {
 	It("keeps young preview namespaces until they age past TTL, then marks them for deletion", func() {
 		ns := &corev1.Namespace{}
 		ns.Name = "preview-young"
+		ns.Labels = map[string]string{labelPreview: "true"}
 
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 
