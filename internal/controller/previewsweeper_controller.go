@@ -60,8 +60,8 @@ func (s *NamespaceSweeper) Start(ctx context.Context, interval time.Duration) {
 						continue
 					}
 
-					//read TTL from annotation or use default if unset
-					//default is passed from Helm upon creation
+					// read TTL from annotation or use default if unset
+					// default is passed from Helm upon creation
 					effectiveTTL, ttlSrc := resolveTTL(ns.Annotations, s.TTL)
 
 					if effectiveTTL <= 0 {
