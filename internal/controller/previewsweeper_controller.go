@@ -14,8 +14,7 @@ import (
 )
 
 const (
-	LabelPreview = "preview-sweeper.maxsauce.com/enabled"
-	// Optional TTL, supports time.ParseDuration formats (e.g., "4h", "30m", "2h45m", or "69" (hours)).
+	LabelPreview   = "preview-sweeper.maxsauce.com/enabled"
 	AnnotationTTL  = "preview-sweeper.maxsauce.com/ttl"
 	AnnotationHold = "preview-sweeper.maxsauce.com/hold"
 )
@@ -25,8 +24,10 @@ type NamespaceSweeper struct {
 	TTL      time.Duration
 	Recorder record.EventRecorder
 
-	Interval      time.Duration // required
-	JitterPercent float64       // optional: e.g., 0.05 = +-5% jitter; 0 disables it.
+	Interval      time.Duration
+	JitterPercent float64 // optional: e.g., 0.05 = +-5% jitter; 0 disables it.
+
+	DryRun bool
 }
 
 func (s *NamespaceSweeper) Start(ctx context.Context) error {
@@ -36,22 +37,24 @@ func (s *NamespaceSweeper) Start(ctx context.Context) error {
 		s.Interval = 24 * time.Hour
 	}
 
-	//no math.rand() here
 	firstDelay := s.withJitter(s.Interval, 0.1)
 	timer := time.NewTimer(firstDelay)
 	defer timer.Stop()
 
-	logger.Info("Namespace sweeper started", "interval", s.Interval, "initialDelay", firstDelay, "jitterPercent", s.JitterPercent)
+	logger.Info("Namespace sweeper started",
+		"interval", s.Interval,
+		"initialDelay", firstDelay,
+		"jitterPercent", s.JitterPercent,
+		"dryRun", s.DryRun,
+	)
 
 	for {
 		select {
 		case <-ctx.Done():
 			logger.Info("Namespace sweeper stopped")
 			return nil
-
 		case <-timer.C:
 			s.SweepOnce(ctx)
-
 			next := s.withJitter(s.Interval, s.JitterPercent)
 			timer.Reset(next)
 		}
@@ -65,7 +68,6 @@ func (s *NamespaceSweeper) SweepOnce(ctx context.Context) {
 	listOpts := &client.ListOptions{LabelSelector: sel}
 
 	var nsList corev1.NamespaceList
-	// we get labeled "sweeper/enabled=true" namespaces.
 	if err := s.Client.List(ctx, &nsList, listOpts); err != nil {
 		logger.Error(err, "Failed to list namespaces")
 		return
@@ -82,7 +84,6 @@ func (s *NamespaceSweeper) SweepOnce(ctx context.Context) {
 			continue
 		}
 
-		// from all labeled namespaces, we pick previews.
 		if !strings.HasPrefix(ns.Name, "preview-") {
 			continue
 		}
@@ -94,7 +95,6 @@ func (s *NamespaceSweeper) SweepOnce(ctx context.Context) {
 			continue
 		}
 
-		// could be outdated, but left just cause i can.
 		if effectiveTTL <= 0 {
 			logger.Info("Skipping namespace (non-positive TTL)", "name", ns.Name, "ttlSource", ttlSrc, "ttl", effectiveTTL.String())
 			continue
@@ -102,6 +102,15 @@ func (s *NamespaceSweeper) SweepOnce(ctx context.Context) {
 
 		age := now.Sub(ns.CreationTimestamp.Time)
 		if age > effectiveTTL {
+			if s.DryRun {
+				logger.Info("[dry-run] Would delete expired namespace", "name", ns.Name, "age", age, "ttlSource", ttlSrc, "ttl", effectiveTTL.String())
+				if s.Recorder != nil {
+					s.Recorder.Eventf(ns, corev1.EventTypeNormal, "NamespaceCleanupDryRun",
+						"[dry-run] Would delete namespace %q: age %s exceeded TTL %s (%s)", ns.Name, age, effectiveTTL, ttlSrc)
+				}
+				continue
+			}
+
 			logger.Info("Deleting expired namespace", "name", ns.Name, "age", age, "ttlSource", ttlSrc, "ttl", effectiveTTL.String())
 			if err := s.Client.Delete(ctx, ns); err != nil {
 				logger.Error(err, "Failed to delete namespace", "name", ns.Name)

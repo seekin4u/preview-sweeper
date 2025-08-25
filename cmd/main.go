@@ -14,6 +14,8 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"strconv"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -50,6 +52,7 @@ func main() {
 
 	var sweepEvery time.Duration
 	var ttl time.Duration
+	var dryRun bool
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "Metrics bind address, use 0 to disable")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "Health probe bind address")
@@ -66,6 +69,7 @@ func main() {
 	// Sweeper flags
 	flag.DurationVar(&sweepEvery, "sweep-every", defaultSweepEvery, "How often to sweep namespaces")
 	flag.DurationVar(&ttl, "ttl", defaultTTL, "Namespace TTL before deletion")
+	flag.BoolVar(&dryRun, "dry-run", false, "Log and emit events instead of deleting namespaces")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -80,6 +84,11 @@ func main() {
 	if envVal := os.Getenv("TTL"); envVal != "" {
 		if dur, err := time.ParseDuration(envVal); err == nil {
 			ttl = dur
+		}
+	}
+	if envVal := os.Getenv("DRY_RUN"); envVal != "" {
+		if dryrnenv, err := strconv.ParseBool(envVal); err == nil {
+			dryRun = dryrnenv
 		}
 	}
 
@@ -98,6 +107,7 @@ func main() {
 		"TTL", ttl,
 		"MetricsAddr", metricsAddr,
 		"LeaderElect", enableLeaderElection,
+		"DryRun", dryRun,
 	)
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
@@ -182,6 +192,7 @@ func main() {
 		Recorder:      rec,
 		Interval:      sweepEvery,
 		JitterPercent: 0.05,
+		DryRun:        dryRun,
 	}
 
 	// letting manager to lifecycle
