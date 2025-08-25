@@ -273,7 +273,7 @@ spec:
       containers:
         - name: manager
           image: %s
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           args:
             - --metrics-bind-address=0
             - --health-probe-bind-address=:8081
