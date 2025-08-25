@@ -84,7 +84,7 @@ var _ = BeforeSuite(func() {
 	// start manager in background
 	go func() {
 		defer GinkgoRecover()
-		//expect k8s manager to be initialized and started
+		// expect k8s manager to be initialized and started
 		Expect(k8sManager.Start(ctx)).To(Succeed())
 	}()
 

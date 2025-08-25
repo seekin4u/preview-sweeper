@@ -12,9 +12,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	labelPreview   = "preview-sweeper.maxsauce.com/enabled"
+	annotationHold = "preview-sweeper.maxsauce.com/hold"
+)
+
 var _ = Describe("NamespaceSweeper", func() {
 	var ctx context.Context
-	const labelPreview = "preview-sweeper.maxsauce.com/enabled"
 
 	BeforeEach(func() {
 		ctx = context.Background()
@@ -103,5 +107,29 @@ var _ = Describe("NamespaceSweeper", func() {
 			Expect(err).NotTo(HaveOccurred())
 			return cur.DeletionTimestamp != nil
 		}).Should(BeTrue(), "should be marked for deletion after TTL")
+	})
+
+	It("does NOT delete preview namespaces when hold annotation is true (even past TTL)", func() {
+		ns := &corev1.Namespace{}
+		ns.Name = "preview-held-1"
+		ns.Labels = map[string]string{labelPreview: "true"}
+		ns.Annotations = map[string]string{annotationHold: "true"}
+
+		By("creating a held preview namespace")
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+		// Let it age past TTL and allow a couple of sweeps to run
+		time.Sleep(testTTL + 2*testSweepEvery)
+
+		By("ensuring it still exists and is not being deleted despite exceeding TTL")
+		Consistently(func() bool {
+			cur := &corev1.Namespace{}
+			err := k8sClient.Get(ctx, client.ObjectKey{Name: ns.Name}, cur)
+			if apierrors.IsNotFound(err) {
+				return false
+			}
+			Expect(err).NotTo(HaveOccurred())
+			return cur.DeletionTimestamp == nil
+		}).Should(BeTrue(), "held preview namespace must not be deleted while hold=true")
 	})
 })

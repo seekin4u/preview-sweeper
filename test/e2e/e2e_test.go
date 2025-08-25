@@ -27,6 +27,7 @@ var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
 		img             string
 		ctrlNS          string
 		testNS          string
+		testNSHold      string
 		crName          string
 		crbName         string
 		deployName      = "preview-sweeper-controller-manager"
@@ -44,6 +45,7 @@ var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
 		suffix := time.Now().Unix()
 		ctrlNS = fmt.Sprintf("sweeper-e2e-%d", suffix)
 		testNS = fmt.Sprintf("preview-test-%d", suffix)
+		testNSHold = fmt.Sprintf("preview-held-%d", suffix)
 		crName = fmt.Sprintf("preview-sweeper-e2e-%d", suffix)
 		crbName = fmt.Sprintf("preview-sweeper-e2e-%d", suffix)
 
@@ -78,6 +80,7 @@ var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
 	AfterAll(func() {
 		By("cleaning test namespace if present")
 		_, _ = utils.Run(exec.Command("kubectl", "delete", "namespace", testNS, "--ignore-not-found=true", "--wait=false"))
+		_, _ = utils.Run(exec.Command("kubectl", "delete", "namespace", testNSHold, "--ignore-not-found=true", "--wait=false"))
 
 		By("cleaning controller namespace and RBAC")
 		_, _ = utils.Run(exec.Command("kubectl", "delete", "deploy", deployName, "-n", ctrlNS, "--ignore-not-found=true", "--wait=false"))
@@ -118,6 +121,70 @@ var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
 			// Or deletionTimestamp is set
 			return strings.TrimSpace(out) != ""
 		}).Should(BeTrue(), "namespace should be deleted or marked for deletion by sweeper")
+	})
+
+	It("honors hold annotation: does not delete while hold=true, then deletes after hold is removed", func() {
+		holdKey := "preview-sweeper.maxsauce.com/hold"
+
+		By("creating a preview-* namespace to be held")
+		_, err := utils.Run(exec.Command("kubectl", "create", "namespace", testNSHold))
+		Expect(err).NotTo(HaveOccurred(), "failed to create held preview namespace")
+
+		By("labeling the namespace to enable sweeping")
+		_, err = utils.Run(exec.Command(
+			"kubectl", "label", "namespace", testNSHold,
+			fmt.Sprintf("%s=true", previewLabelKey),
+			"--overwrite",
+		))
+		Expect(err).NotTo(HaveOccurred(), "failed to label held preview namespace")
+
+		By("annotating hold=true to prevent deletion")
+		_, err = utils.Run(exec.Command(
+			"kubectl", "annotate", "namespace", testNSHold,
+			fmt.Sprintf("%s=true", holdKey),
+			"--overwrite",
+		))
+		Expect(err).NotTo(HaveOccurred(), "failed to annotate hold=true")
+
+		// let this mofo to age
+		parsedTTL, _ := time.ParseDuration(ttl)
+		parsedSweep, _ := time.ParseDuration(sweepEvery)
+		time.Sleep(parsedTTL + 2*parsedSweep)
+
+		By("verifying it is NOT marked for deletion while hold=true")
+		Consistently(func() bool {
+			out, err := utils.Run(exec.Command(
+				"kubectl", "get", "namespace", testNSHold,
+				"-o", "jsonpath={.metadata.deletionTimestamp}",
+			))
+			if err != nil {
+				// NotFound would mean hold aint working
+				return false
+			}
+			// deletionTimestamp must remain empty while held=true
+			return strings.TrimSpace(out) == ""
+		}, 30*time.Second, 5*time.Second).Should(BeTrue(), "held namespace must not be deleted or marked for deletion")
+
+		By("removing the hold annotation")
+		// Kubernetes convention: <key>- removes the annotation
+		_, err = utils.Run(exec.Command(
+			"kubectl", "annotate", "namespace", testNSHold,
+			fmt.Sprintf("%s-", holdKey),
+		))
+		Expect(err).NotTo(HaveOccurred(), "failed to remove hold annotation")
+
+		By("eventually observing deletion once hold is removed (either NotFound or deletionTimestamp set)")
+		Eventually(func() bool {
+			out, err := utils.Run(exec.Command(
+				"kubectl", "get", "namespace", testNSHold,
+				"-o", "jsonpath={.metadata.deletionTimestamp}",
+			))
+			if err != nil {
+				// already deleted in this case
+				return true
+			}
+			return strings.TrimSpace(out) != ""
+		}).Should(BeTrue(), "namespace should be deleted after hold is removed and TTL already exceeded")
 	})
 })
 
