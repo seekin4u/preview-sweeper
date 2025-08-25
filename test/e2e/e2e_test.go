@@ -39,7 +39,8 @@ var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
 	BeforeAll(func() {
 		img = os.Getenv("E2E_IMG")
 		if img == "" {
-			img = "ghcr.io/seekin4u/preview-sweeper:v0.0.3"
+			// TODO: add latest tag later, lazy now
+			img = "ghcr.io/seekin4u/preview-sweeper:v0.0.4"
 		}
 
 		suffix := time.Now().Unix()
@@ -75,6 +76,9 @@ var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
 			"--timeout=120s",
 		))
 		Expect(err).NotTo(HaveOccurred(), "controller pod not ready")
+		imgOut, _ := utils.Run(exec.Command("kubectl", "-n", ctrlNS, "get", "deploy", deployName, "-o", "jsonpath={.spec.template.spec.containers[0].image}"))
+		argsOut, _ := utils.Run(exec.Command("kubectl", "-n", ctrlNS, "get", "deploy", deployName, "-o", "jsonpath={.spec.template.spec.containers[0].args}"))
+		fmt.Fprintf(GinkgoWriter, "\nController image: %s\nController args: %s\n\n", imgOut, argsOut)
 	})
 
 	AfterAll(func() {
@@ -88,6 +92,20 @@ var _ = Describe("NamespaceSweeper in non-local cluster", Ordered, func() {
 		_, _ = utils.Run(exec.Command("kubectl", "delete", "namespace", ctrlNS, "--ignore-not-found=true", "--wait=false"))
 		_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrole", crName, "--ignore-not-found=true"))
 		_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding", crbName, "--ignore-not-found=true"))
+	})
+
+	AfterEach(func() {
+		if CurrentSpecReport().Failed() {
+			fmt.Fprintln(GinkgoWriter, "\n--- Deploy details ---")
+			_, _ = utils.Run(exec.Command("kubectl", "-n", ctrlNS, "get", "deploy", deployName, "-o", "yaml"))
+			fmt.Fprintln(GinkgoWriter, "\n--- Pods ---")
+			_, _ = utils.Run(exec.Command("kubectl", "-n", ctrlNS, "get", "pods", "-o", "wide"))
+			fmt.Fprintln(GinkgoWriter, "\n--- Pod describe ---")
+			_, _ = utils.Run(exec.Command("kubectl", "-n", ctrlNS, "describe", "pods", "-l", "app=preview-sweeper,control-plane=preview-sweeper-controller"))
+			fmt.Fprintln(GinkgoWriter, "\n--- Controller logs (last 200) ---")
+			_, _ = utils.Run(exec.Command("kubectl", "-n", ctrlNS, "logs", "-l", "app=preview-sweeper,control-plane=preview-sweeper-controller", "--tail=200"))
+			fmt.Fprintln(GinkgoWriter, "\n--- End logs ---")
+		}
 	})
 
 	SetDefaultEventuallyTimeout(3 * time.Minute)
@@ -210,7 +228,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["namespaces"]
-    verbs: ["get","list","delete"]
+    verbs: ["get","list","delete", "watch"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create","patch","update"]
@@ -255,7 +273,7 @@ spec:
       containers:
         - name: manager
           image: %s
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           args:
             - --metrics-bind-address=0
             - --health-probe-bind-address=:8081
