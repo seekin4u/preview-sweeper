@@ -25,6 +25,7 @@ spec:
           args:
             - "--metrics-bind-address={{ if .Values.metrics.enabled }}:{{ .Values.metrics.port }}{{ else }}0{{ end }}"
             - "--health-probe-bind-address=:8081"
+            - "--leader-elect={{ .Values.leaderElection.enabled }}"
           env:
             # Your main runtime knobs come from env (main.go supports SWEEP_EVERY / TTL)
             - name: SWEEP_EVERY

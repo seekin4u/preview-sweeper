@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
@@ -84,6 +85,13 @@ type NamespaceSweeper struct {
 	JitterPercent float64 // optional: e.g., 0.05 = +-5% jitter; 0 disables it.
 
 	DryRun bool
+}
+
+// Ensure NamespaceSweeper respects leader election.
+var _ manager.LeaderElectionRunnable = (*NamespaceSweeper)(nil)
+
+func (s *NamespaceSweeper) NeedLeaderElection() bool {
+	return true
 }
 
 func (s *NamespaceSweeper) Start(ctx context.Context) error {
