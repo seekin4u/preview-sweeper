@@ -28,6 +28,8 @@ helm push preview-sweeper-*.tgz oci://ghcr.io/seekin4u/helm
   
 ---
 Helm:
+First install monitoring: helm upgrade --install monitoring prometheus-community/kube-prometheus-stack -n monitoring --create-namespace --set prometheus.prometheusSpec.maximumStartupDurationSeconds=300
+
 Locally: helm upgrade --install preview-sweeper ./charts/preview-sweeper -n namespace-sweeper --create-namespace -f ./charts/preview-sweeper/values.yaml
 Remotely: helm upgrade --install preview-sweeper oci://ghcr.io/seekin4u/helm/preview-sweeper --version 0.1.1 -n namespace-sweeper --create-namespace -f values.yaml
 

@@ -1,13 +1,14 @@
 image:
   repository: ghcr.io/seekin4u/preview-sweeper
-  tag: arm64
-  pullPolicy: IfNotPresent
+  #tag: "arm64"
+  pullPolicy: Always
+  digest: sha256:6004f85bd764b8b65887fde04b816cd25748a1c95a09b1be206edb7486fa5930
 
 replicaCount: 1
 
 #controller envs
-sweepEvery: "1m"
-ttl: "2m"
+sweepEvery: "5m"
+ttl: "10m"
 
 metrics:
   enabled: true
@@ -15,7 +16,7 @@ metrics:
   secure: true
   monitoringns: "monitoring"
 
-#you cant set it to TRUE without CRDs
+#you cant set it to TRUE without installing CRDs
 serviceMonitor:
   enabled: true
   labels:
