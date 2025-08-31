@@ -60,6 +60,11 @@ var (
 		Name:      "namespaces_deleted_total",
 		Help:      "Total namespaces deletion outcomes.",
 	}, []string{"result"}) // result=deleted|dry_run|error
+	lastSweepTS = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "preview_sweeper",
+		Name:      "last_sweep_timestamp_seconds",
+		Help:      "Unix time when a sweep finished.",
+	})
 )
 
 const (
@@ -72,7 +77,7 @@ func init() {
 	crmetrics.Registry.MustRegister(
 		sweepDuration, sweepsTotal, listErrorsTotal,
 		lastScanned, lastCandidates, lastExpired, lastDeleted,
-		deletedTotal,
+		deletedTotal, lastSweepTS,
 	)
 }
 
@@ -146,6 +151,7 @@ func (s *NamespaceSweeper) SweepOnce(ctx context.Context) {
 			"deleted", deleted,
 			"took", time.Since(start),
 		)
+		lastSweepTS.Set(float64(time.Now().Unix()))
 	}()
 
 	sel := labels.SelectorFromSet(labels.Set{LabelPreview: "true"})
