@@ -1,12 +1,12 @@
 image:
   repository: ghcr.io/seekin4u/preview-sweeper
-  tag: "amd64"
+  tag: "v0.0.5-amd64"
   pullPolicy: Always
   #digest: sha256:6004f85bd764b8b65887fde04b816cd25748a1c95a09b1be206edb7486fa5930
 
-replicaCount: 2
+replicaCount: 1
 leaderElection:
-  enabled: true 
+  enabled: false 
 
 #controller envs
 sweepEvery: "5m"
