@@ -128,10 +128,24 @@ func (s *NamespaceSweeper) Start(ctx context.Context) error {
 func (s *NamespaceSweeper) SweepOnce(ctx context.Context) {
 	logger := log.FromContext(ctx).WithName("NamespaceSweeper")
 	start := time.Now()
+	scanned := 0 // <-- add this
+
+	var (
+		candidates int
+		expired    int
+		deleted    int
+	)
 	// end-of-function metric updates
 	defer func() {
 		sweepsTotal.Inc()
 		sweepDuration.Observe(time.Since(start).Seconds())
+		logger.Info("Sweep finished",
+			"scanned", scanned,
+			"candidates", candidates,
+			"expired", expired,
+			"deleted", deleted,
+			"took", time.Since(start),
+		)
 	}()
 
 	sel := labels.SelectorFromSet(labels.Set{LabelPreview: "true"})
@@ -150,11 +164,6 @@ func (s *NamespaceSweeper) SweepOnce(ctx context.Context) {
 	lastScanned.Set(float64(len(nsList.Items)))
 
 	now := time.Now()
-	var (
-		candidates int
-		expired    int
-		deleted    int
-	)
 
 	for i := range nsList.Items {
 		ns := &nsList.Items[i]

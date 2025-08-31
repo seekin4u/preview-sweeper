@@ -6,7 +6,7 @@ set -euo pipefail
 COUNT=${COUNT:-10}
 PREFIX=${PREFIX:-preview}       # namespaces will be PREFIX-1 .. PREFIX-10
 START=${START:-1}
-TTL=${TTL:-20m}
+TTL=${TTL:-10m}
 SWEEPER_DOMAIN=${SWEEPER_DOMAIN:-preview-sweeper.maxsauce.com}
 
 LABEL_KEY="${SWEEPER_DOMAIN}/enabled"
