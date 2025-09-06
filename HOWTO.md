@@ -24,7 +24,7 @@ security find-internet-password -s ghcr.io -w | helm registry login ghcr.io -u s
 ~/preview-sweeper/charts/preview-sweeper$ helm dependency update
 helm lint .
 helm package .
-helm push preview-sweeper-*.tgz oci://ghcr.io/seekin4u/helm
+helm push namespace-preview-sweeper-*.tgz oci://ghcr.io/seekin4u/helm
   
 ---
 Helm:
