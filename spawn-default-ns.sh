@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Config (override via env or edit here)
-COUNT=${COUNT:-10}
+COUNT=${COUNT:-1000}
 PREFIX=${PREFIX:-preview}       # namespaces will be PREFIX-1 .. PREFIX-10
 START=${START:-1}
 SWEEPER_DOMAIN=${SWEEPER_DOMAIN:-preview-sweeper.maxsauce.com}
@@ -11,7 +11,7 @@ SWEEPER_DOMAIN=${SWEEPER_DOMAIN:-preview-sweeper.maxsauce.com}
 LABEL_KEY="${SWEEPER_DOMAIN}/enabled"
 
 for ((i=START; i<START+COUNT; i++)); do
-  ns="${PREFIX}-default-${i}"
+  ns="${PREFIX}-default-test-${i}"
   # Create (or update) the namespace with the desired metadata
   cat <<YAML | kubectl apply -f -
 apiVersion: v1

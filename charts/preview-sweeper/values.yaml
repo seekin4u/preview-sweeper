@@ -1,16 +1,18 @@
 image:
   repository: ghcr.io/seekin4u/preview-sweeper
-  tag: "v0.0.5-amd64"
+  tag: "v0.0.6-amd64"
   pullPolicy: Always
-  #digest: sha256:6004f85bd764b8b65887fde04b816cd25748a1c95a09b1be206edb7486fa5930
+  # digest: sha256:6004f85bd764b8b65887fde04b816cd25748a1c95a09b1be206edb7486fa5930
 
-replicaCount: 1
+replicaCount: 2
 leaderElection:
-  enabled: false 
+  enabled: true 
 
-#controller envs
-sweepEvery: "5m"
-ttl: "10m"
+# controller envs
+sweepEvery: "45m"
+ttl: "1h"
+# debug | info | error | dpanic | panic | fatal
+logLevel: info
 
 metrics:
   enabled: true
@@ -18,7 +20,7 @@ metrics:
   secure: true
   monitoringns: "monitoring"
 
-#you cant set it to TRUE without installing CRDs
+# you cant set it to TRUE without installing CRDs
 serviceMonitor:
   enabled: true
   labels:
